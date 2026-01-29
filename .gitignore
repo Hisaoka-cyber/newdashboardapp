@@ -1,4 +1,12 @@
 .DS_Store
 secrets.txt
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vscode/
+.idea/
+*.log
+npm-debug.log*
 
 #Log files

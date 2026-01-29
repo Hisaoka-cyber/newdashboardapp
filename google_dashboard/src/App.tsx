@@ -3,7 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
 import { DashboardLayout } from './components/DashboardLayout'
 import { useAuth } from './contexts/AuthContext'
-import { Calendar, CheckSquare, FileText, AlertCircle, Loader2, BarChart3 } from 'lucide-react'
+import { Calendar, CheckSquare, FileText, AlertCircle, Loader2, BarChart3, ExternalLink } from 'lucide-react'
 import { CalendarWidget } from './components/CalendarWidget'
 import { TasksWidget } from './components/TasksWidget'
 import { DriveWidget } from './components/DriveWidget'
@@ -105,17 +105,62 @@ function DashboardOverview() {
 }
 
 function CalendarPage() {
+  const { user } = useAuth();
+  const userEmail = user?.getEmail();
+  const calendarUrl = userEmail
+    ? `https://calendar.google.com/calendar/embed?src=${encodeURIComponent(userEmail)}&ctz=Asia%2FTokyo`
+    : null;
+
   return (
-    <div className="space-y-8">
-      <header>
-        <div className="flex items-center gap-3 text-blue-600 mb-2">
-          <Calendar className="w-8 h-8" />
-          <h2 className="text-3xl font-black text-zinc-900 dark:text-zinc-100">Calendar</h2>
+    <div className="space-y-8 h-full flex flex-col">
+      <header className="flex items-center justify-between shrink-0">
+        <div className="space-y-2">
+          <div className="flex items-center gap-3 text-blue-600">
+            <Calendar className="w-8 h-8" />
+            <h2 className="text-3xl font-black text-zinc-900 dark:text-zinc-100">Calendar</h2>
+          </div>
+          <p className="text-zinc-500">Manage your events and meetings with a full interactive view.</p>
         </div>
-        <p className="text-zinc-500">Manage your events and meetings.</p>
+        <a
+          href="https://calendar.google.com"
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-2 px-5 py-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-xl font-bold hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all"
+        >
+          <ExternalLink className="w-4 h-4" />
+          <span className="hidden sm:inline">Open in New Tab</span>
+        </a>
       </header>
-      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-8 min-h-[500px]">
-        <CalendarWidget />
+
+      <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-6 pb-6">
+        {/* Left: Quick Actions Widget */}
+        <div className="lg:w-[400px] shrink-0">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 h-full overflow-y-auto">
+            <h3 className="text-sm font-black uppercase tracking-wider text-zinc-400 mb-6">Quick Management</h3>
+            <CalendarWidget />
+          </div>
+        </div>
+
+        {/* Right: Full Embedded Calendar */}
+        <div className="flex-1 min-h-[500px] lg:min-h-0">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl overflow-hidden h-full shadow-sm">
+            {calendarUrl ? (
+              <iframe
+                src={calendarUrl}
+                style={{ border: 0 }}
+                width="100%"
+                height="100%"
+                frameBorder="0"
+                scrolling="no"
+                className="dark:invert dark:hue-rotate-180 dark:contrast-75 opacity-90 transition-opacity hover:opacity-100"
+              />
+            ) : (
+              <div className="h-full flex items-center justify-center text-zinc-400 italic">
+                Sign in to view the interactive calendar
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

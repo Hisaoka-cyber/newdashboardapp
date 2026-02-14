@@ -15,7 +15,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const SCOPES = 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/tasks https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email';
+const SCOPES = 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/tasks https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email';
 const DISCOVERY_DOCS = [
     'https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest',
     'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest',
@@ -28,7 +28,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [isLoaded, setIsLoaded] = useState(false);
     const [isSigningIn, setIsSigningIn] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [clientId, setClientIdState] = useState(localStorage.getItem('google_client_id') || '');
+    const [clientId, setClientIdState] = useState(import.meta.env.VITE_GOOGLE_CLIENT_ID || localStorage.getItem('google_client_id') || '');
     const [tokenClient, setTokenClient] = useState<any>(null);
 
     const setClientId = (id: string) => {
@@ -105,10 +105,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     useEffect(() => {
         // Wait for both GSI and GAPI to be available
+        let attempt = 0;
         const checkScripts = setInterval(() => {
-            if ((window as any).google?.accounts?.oauth2 && gapi) {
+            const hasGoogle = !!(window as any).google?.accounts?.oauth2;
+            const hasGapi = !!gapi;
+
+            if (hasGoogle && hasGapi) {
                 clearInterval(checkScripts);
                 initClient();
+            }
+
+            attempt++;
+            if (attempt > 50) { // 5 seconds
+                clearInterval(checkScripts);
+                const missing = [];
+                if (!hasGoogle) missing.push("Google Identity Service");
+                if (!hasGapi) missing.push("Google API Client");
+                setError(`Failed to load scripts: ${missing.join(', ')}. Check your internet connection or ad blockers.`);
+                setIsLoaded(true);
             }
         }, 100);
         return () => clearInterval(checkScripts);

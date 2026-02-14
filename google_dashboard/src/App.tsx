@@ -3,10 +3,15 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
 import { DashboardLayout } from './components/DashboardLayout'
 import { useAuth } from './contexts/AuthContext'
-import { Calendar, CheckSquare, FileText, AlertCircle, Loader2, BarChart3, ExternalLink } from 'lucide-react'
+import { Calendar, CheckSquare, FileText, AlertCircle, Loader2, BarChart3, ExternalLink, TrendingUp } from 'lucide-react'
 import { CalendarWidget } from './components/CalendarWidget'
 import { TasksWidget } from './components/TasksWidget'
 import { DriveWidget } from './components/DriveWidget'
+import { FinanceWidget } from './components/FinanceWidget'
+import { FinancePage } from './components/FinancePage'
+import { AttendancePage } from './components/AttendancePage'
+import { InvestmentPage } from './components/InvestmentPage'
+import { InvestmentWidget } from './components/InvestmentWidget'
 
 // --- Layout & Guard ---
 
@@ -55,6 +60,9 @@ function AppContent() {
         <Route path="/tasks" element={<TasksPage />} />
         <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/colab" element={<ColabPage />} />
+        <Route path="/finance" element={<FinancePage />} />
+        <Route path="/attendance" element={<AttendancePage />} />
+        <Route path="/investment" element={<InvestmentPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </DashboardLayout>
@@ -99,17 +107,74 @@ function DashboardOverview() {
         >
           <DriveWidget />
         </ModuleCard>
+
+        <ModuleCard
+          title="Household Account"
+          icon={<ExternalLink className="text-emerald-500" />}
+          description="Personal finance tracker"
+          status="online"
+        >
+          <FinanceWidget />
+        </ModuleCard>
+
+        <ModuleCard
+          title="Investment"
+          icon={<TrendingUp className="text-indigo-500" />}
+          description="Stock & CFD monitor"
+          status="online"
+        >
+          <InvestmentWidget />
+        </ModuleCard>
       </div>
     </div>
   );
 }
 
 function CalendarPage() {
-  const { user } = useAuth();
-  const userEmail = user?.getEmail();
-  const calendarUrl = userEmail
-    ? `https://calendar.google.com/calendar/embed?src=${encodeURIComponent(userEmail)}&ctz=Asia%2FTokyo`
-    : null;
+  const { isSignedIn } = useAuth();
+  const [calendarUrl, setCalendarUrl] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    if (isSignedIn) {
+      loadCalendarList();
+    }
+  }, [isSignedIn]);
+
+  const loadCalendarList = async () => {
+    setLoading(true);
+    try {
+      const response = await (gapi.client as any).calendar.calendarList.list();
+      const calendars = response.result.items || [];
+
+      // Filter for calendars that are visible/selected in the main Google Calendar UI
+      const selectedCalendars = calendars.filter((cal: any) => cal.selected);
+
+      if (selectedCalendars.length > 0) {
+        const baseUrl = "https://calendar.google.com/calendar/embed?";
+        const params = new URLSearchParams();
+
+        selectedCalendars.forEach((cal: any) => {
+          params.append('src', cal.id);
+          if (cal.backgroundColor) {
+            // Google expects the color without the '#' for the parameter
+            params.append('color', cal.backgroundColor.replace('#', '%23'));
+          }
+        });
+
+        params.append('ctz', 'Asia/Tokyo');
+        setCalendarUrl(`${baseUrl}${params.toString()}`);
+      } else {
+        // Fallback to primary if none selected (shouldn't happen usually)
+        setCalendarUrl(`https://calendar.google.com/calendar/embed?src=primary&ctz=Asia%2FTokyo`);
+      }
+    } catch (error) {
+      console.error('Error fetching calendar list:', error);
+      setCalendarUrl(`https://calendar.google.com/calendar/embed?src=primary&ctz=Asia%2FTokyo`);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="space-y-8 h-full flex flex-col">
@@ -143,8 +208,13 @@ function CalendarPage() {
 
         {/* Right: Full Embedded Calendar */}
         <div className="flex-1 min-h-[500px] lg:min-h-0">
-          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl overflow-hidden h-full shadow-sm">
-            {calendarUrl ? (
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl overflow-hidden h-full shadow-sm relative">
+            {loading ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/50 dark:bg-zinc-900/50 backdrop-blur-sm">
+                <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-2" />
+                <p className="text-zinc-500 text-sm">Syncing calendars...</p>
+              </div>
+            ) : calendarUrl ? (
               <iframe
                 src={calendarUrl}
                 style={{ border: 0 }}

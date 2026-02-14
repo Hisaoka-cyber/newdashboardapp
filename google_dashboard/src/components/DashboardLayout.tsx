@@ -14,7 +14,8 @@ import {
     Sun,
     Menu,
     X,
-    Loader2
+    Loader2,
+    TrendingUp
 } from 'lucide-react';
 import { SettingsModal } from './SettingsModal';
 
@@ -46,6 +47,9 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                         <NavItem to="/tasks" icon={<CheckSquare />} label="To-Do" active={location.pathname === '/tasks'} />
                         <NavItem to="/documents" icon={<FileText />} label="Documents" active={location.pathname === '/documents'} />
                         <NavItem to="/colab" icon={<Cpu />} label="Colab" active={location.pathname === '/colab'} />
+                        <NavItem to="/finance" icon={<Calendar />} label="Finance" active={location.pathname === '/finance'} />
+                        <NavItem to="/attendance" icon={<FileText />} label="勤務表" active={location.pathname === '/attendance'} />
+                        <NavItem to="/investment" icon={<TrendingUp />} label="Investment" active={location.pathname === '/investment'} />
                     </nav>
 
                     <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 space-y-2">

@@ -1,0 +1,6 @@
+src/App.tsx(122,18): error TS2304: Cannot find name 'TrendingUp'.
+src/components/FinancePage.tsx(66,19): error TS6133: 'downloadResponse' is declared but its value is never read.
+src/components/FinancePage.tsx(92,19): error TS2322: Type '{ id: string; date: any; item: any; amount: number; type: string; }[]' is not assignable to type 'Transaction[]'.
+  Type '{ id: string; date: any; item: any; amount: number; type: string; }' is not assignable to type 'Transaction'.
+    Types of property 'type' are incompatible.
+      Type 'string' is not assignable to type '"income" | "expense"'.

@@ -47,8 +47,10 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                         <NavItem to="/tasks" icon={<CheckSquare />} label="To-Do" active={location.pathname === '/tasks'} />
                         <NavItem to="/documents" icon={<FileText />} label="Documents" active={location.pathname === '/documents'} />
                         <NavItem to="/colab" icon={<Cpu />} label="Colab" active={location.pathname === '/colab'} />
-                        <NavItem to="/finance" icon={<Calendar />} label="Finance" active={location.pathname === '/finance'} />
                         <NavItem to="/attendance" icon={<FileText />} label="勤務表" active={location.pathname === '/attendance'} />
+                        <NavItem to="/points" icon={<TrendingUp />} label="ポイント管理" active={location.pathname === '/points'} />
+                        <NavItem to="/minutes" icon={<FileText />} label="議事録" active={location.pathname === '/minutes'} />
+                        <NavItem to="/finance" icon={<Calendar />} label="Finance" active={location.pathname === '/finance'} />
                         <NavItem to="/investment" icon={<TrendingUp />} label="Investment" active={location.pathname === '/investment'} />
                     </nav>
 

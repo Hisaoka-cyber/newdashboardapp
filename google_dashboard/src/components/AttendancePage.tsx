@@ -32,8 +32,8 @@ export const AttendancePage: React.FC = () => {
             // 2. Search for latest PDF in that folder
             const fileResponse = await (gapi.client as any).drive.files.list({
                 q: `'${folderId}' in parents and mimeType = 'application/pdf' and trashed = false`,
-                fields: 'files(id, name, webViewLink, iconLink, createdTime)',
-                orderBy: 'createdTime desc',
+                fields: 'files(id, name, webViewLink, iconLink, modifiedTime)',
+                orderBy: 'modifiedTime desc',
                 pageSize: 1
             });
 

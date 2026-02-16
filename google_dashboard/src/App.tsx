@@ -3,15 +3,17 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
 import { DashboardLayout } from './components/DashboardLayout'
 import { useAuth } from './contexts/AuthContext'
-import { Calendar, CheckSquare, FileText, AlertCircle, Loader2, BarChart3, ExternalLink, TrendingUp } from 'lucide-react'
+import { Calendar, CheckSquare, FileText, AlertCircle, Loader2, BarChart3, ExternalLink, TrendingUp, FileSpreadsheet } from 'lucide-react'
 import { CalendarWidget } from './components/CalendarWidget'
 import { TasksWidget } from './components/TasksWidget'
 import { DriveWidget } from './components/DriveWidget'
 import { FinanceWidget } from './components/FinanceWidget'
 import { FinancePage } from './components/FinancePage'
 import { AttendancePage } from './components/AttendancePage'
+import { PointsPage } from './components/PointsPage'
 import { InvestmentPage } from './components/InvestmentPage'
 import { InvestmentWidget } from './components/InvestmentWidget'
+import { MeetingMinutesPage } from './components/MeetingMinutesPage'
 
 // --- Layout & Guard ---
 
@@ -62,7 +64,9 @@ function AppContent() {
         <Route path="/colab" element={<ColabPage />} />
         <Route path="/finance" element={<FinancePage />} />
         <Route path="/attendance" element={<AttendancePage />} />
+        <Route path="/points" element={<PointsPage />} />
         <Route path="/investment" element={<InvestmentPage />} />
+        <Route path="/minutes" element={<MeetingMinutesPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </DashboardLayout>
@@ -106,6 +110,40 @@ function DashboardOverview() {
           status={isSignedIn ? "online" : "offline"}
         >
           <DriveWidget />
+        </ModuleCard>
+
+        <ModuleCard
+          title="Attendance"
+          icon={<FileText className="text-indigo-600" />}
+          description="Latest Attendance PDF"
+          status={isSignedIn ? "online" : "offline"}
+        >
+          <div className="h-[200px] flex flex-col items-center justify-center text-zinc-400 text-center">
+            <p className="text-xs mb-4">Quick access to your latest attendance sheet</p>
+            <button
+              onClick={() => window.location.hash = '/attendance'}
+              className="px-4 py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-xl text-sm font-bold hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all"
+            >
+              View Full Sheet
+            </button>
+          </div>
+        </ModuleCard>
+
+        <ModuleCard
+          title="Points"
+          icon={<FileSpreadsheet className="text-amber-600" />}
+          description="Point Management & Certificates"
+          status={isSignedIn ? "online" : "offline"}
+        >
+          <div className="h-[200px] flex flex-col items-center justify-center text-zinc-400 text-center">
+            <p className="text-xs mb-4 px-4">Tracker for study session points and PDF certificates</p>
+            <button
+              onClick={() => window.location.hash = '/points'}
+              className="px-4 py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-xl text-sm font-bold hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all"
+            >
+              Manage Points
+            </button>
+          </div>
         </ModuleCard>
 
         <ModuleCard

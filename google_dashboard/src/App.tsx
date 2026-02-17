@@ -75,10 +75,13 @@ function AppContent() {
 
 // --- Page Components ---
 
+import { DueSoonBanner } from './components/DueSoonBanner'
+
 function DashboardOverview() {
   const { isSignedIn } = useAuth();
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <DueSoonBanner />
       <header>
         <h2 className="text-3xl font-black">Workplace Overview</h2>
         <p className="text-zinc-500 mt-1">Everything you need to stay productive today.</p>
@@ -122,7 +125,7 @@ function DashboardOverview() {
             <p className="text-xs mb-4">Quick access to your latest attendance sheet</p>
             <button
               onClick={() => window.location.hash = '/attendance'}
-              className="px-4 py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-xl text-sm font-bold hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all"
+              className="px-4 py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-xl text-sm font-bold hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all font-black"
             >
               View Full Sheet
             </button>
@@ -139,7 +142,7 @@ function DashboardOverview() {
             <p className="text-xs mb-4 px-4">Tracker for study session points and PDF certificates</p>
             <button
               onClick={() => window.location.hash = '/points'}
-              className="px-4 py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-xl text-sm font-bold hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all"
+              className="px-4 py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-xl text-sm font-bold hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all font-black"
             >
               Manage Points
             </button>
@@ -236,16 +239,8 @@ function CalendarPage() {
       </header>
 
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-6 pb-6">
-        {/* Left: Quick Actions Widget */}
-        <div className="lg:w-[400px] shrink-0">
-          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 h-full overflow-y-auto">
-            <h3 className="text-sm font-black uppercase tracking-wider text-zinc-400 mb-6">Quick Management</h3>
-            <CalendarWidget />
-          </div>
-        </div>
-
-        {/* Right: Full Embedded Calendar */}
-        <div className="flex-1 min-h-[500px] lg:min-h-0">
+        {/* Main: Full Embedded Calendar (Left on Desktop) */}
+        <div className="flex-1 lg:h-[750px] min-h-[500px] order-2 lg:order-1">
           <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl overflow-hidden h-full shadow-sm relative">
             {loading ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/50 dark:bg-zinc-900/50 backdrop-blur-sm">
@@ -267,6 +262,14 @@ function CalendarPage() {
                 Sign in to view the interactive calendar
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Sidebar: Quick Actions Widget (Right on Desktop) */}
+        <div className="lg:w-[350px] shrink-0 order-1 lg:order-2">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 h-full overflow-y-auto">
+            <h3 className="text-sm font-black uppercase tracking-wider text-zinc-400 mb-6">Quick Management</h3>
+            <CalendarWidget />
           </div>
         </div>
       </div>

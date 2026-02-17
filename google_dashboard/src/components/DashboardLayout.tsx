@@ -31,42 +31,62 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
 
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-black text-zinc-900 dark:text-zinc-100 flex">
+            {/* Mobile Sidebar Overlay */}
+            {isSidebarOpen && (
+                <div
+                    className="fixed inset-0 bg-black/50 backdrop-blur-sm z-30 lg:hidden"
+                    onClick={() => setIsSidebarOpen(false)}
+                />
+            )}
+
             {/* Sidebar */}
-            <aside className={`fixed lg:static inset-y-0 left-0 z-40 w-64 bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 transition-transform duration-300 lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+            <aside className={`fixed lg:sticky top-0 inset-y-0 left-0 z-40 w-64 bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 transition-transform duration-300 lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                 <div className="flex flex-col h-full">
-                    <div className="p-6">
+                    <div className="p-8 flex items-center justify-between">
                         <Link to="/" className="text-2xl font-black bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent flex items-center gap-2">
                             <Cpu className="w-8 h-8 text-blue-600" />
                             WORKPAL
                         </Link>
+                        <button
+                            onClick={() => setIsSidebarOpen(false)}
+                            className="p-2 lg:hidden hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-500"
+                        >
+                            <X size={24} />
+                        </button>
                     </div>
 
-                    <nav className="flex-1 px-4 space-y-2 mt-4">
-                        <NavItem to="/" icon={<LayoutDashboard />} label="Dashboard" active={location.pathname === '/'} />
-                        <NavItem to="/calendar" icon={<Calendar />} label="Calendar" active={location.pathname === '/calendar'} />
-                        <NavItem to="/tasks" icon={<CheckSquare />} label="To-Do" active={location.pathname === '/tasks'} />
-                        <NavItem to="/documents" icon={<FileText />} label="Documents" active={location.pathname === '/documents'} />
-                        <NavItem to="/colab" icon={<Cpu />} label="Colab" active={location.pathname === '/colab'} />
-                        <NavItem to="/attendance" icon={<FileText />} label="勤務表" active={location.pathname === '/attendance'} />
-                        <NavItem to="/points" icon={<TrendingUp />} label="ポイント管理" active={location.pathname === '/points'} />
-                        <NavItem to="/minutes" icon={<FileText />} label="議事録" active={location.pathname === '/minutes'} />
-                        <NavItem to="/finance" icon={<Calendar />} label="Finance" active={location.pathname === '/finance'} />
-                        <NavItem to="/investment" icon={<TrendingUp />} label="Investment" active={location.pathname === '/investment'} />
+                    <nav className="flex-1 px-4 space-y-1.5 mt-2 overflow-y-auto custom-scrollbar">
+                        <NavItem to="/" icon={<LayoutDashboard />} label="Dashboard" active={location.pathname === '/'} onClick={() => { if (window.innerWidth < 1024) setIsSidebarOpen(false); }} />
+                        <NavItem to="/calendar" icon={<Calendar />} label="Calendar" active={location.pathname === '/calendar'} onClick={() => { if (window.innerWidth < 1024) setIsSidebarOpen(false); }} />
+                        <NavItem to="/tasks" icon={<CheckSquare />} label="To-Do" active={location.pathname === '/tasks'} onClick={() => { if (window.innerWidth < 1024) setIsSidebarOpen(false); }} />
+                        <NavItem to="/documents" icon={<FileText />} label="Documents" active={location.pathname === '/documents'} onClick={() => { if (window.innerWidth < 1024) setIsSidebarOpen(false); }} />
+                        <NavItem to="/colab" icon={<Cpu />} label="Colab" active={location.pathname === '/colab'} onClick={() => { if (window.innerWidth < 1024) setIsSidebarOpen(false); }} />
+                        <NavItem to="/attendance" icon={<FileText />} label="勤務表" active={location.pathname === '/attendance'} onClick={() => { if (window.innerWidth < 1024) setIsSidebarOpen(false); }} />
+                        <NavItem to="/points" icon={<TrendingUp />} label="ポイント管理" active={location.pathname === '/points'} onClick={() => { if (window.innerWidth < 1024) setIsSidebarOpen(false); }} />
+                        <NavItem to="/minutes" icon={<FileText />} label="議事録" active={location.pathname === '/minutes'} onClick={() => { if (window.innerWidth < 1024) setIsSidebarOpen(false); }} />
+                        <NavItem to="/finance" icon={<Calendar />} label="Finance" active={location.pathname === '/finance'} onClick={() => { if (window.innerWidth < 1024) setIsSidebarOpen(false); }} />
+                        <NavItem to="/investment" icon={<TrendingUp />} label="Investment" active={location.pathname === '/investment'} onClick={() => { if (window.innerWidth < 1024) setIsSidebarOpen(false); }} />
                     </nav>
 
                     <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 space-y-2">
                         <button
-                            onClick={() => setIsSettingsOpen(true)}
-                            className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                            onClick={() => {
+                                setIsSettingsOpen(true);
+                                if (window.innerWidth < 1024) setIsSidebarOpen(false);
+                            }}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
                         >
-                            <Settings className="w-5 h-5" />
+                            <Settings className="w-5 h-5 text-zinc-500" />
                             Settings
                         </button>
 
                         {isSignedIn ? (
                             <button
-                                onClick={signOut}
-                                className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors"
+                                onClick={() => {
+                                    signOut();
+                                    if (window.innerWidth < 1024) setIsSidebarOpen(false);
+                                }}
+                                className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors"
                             >
                                 <LogOut className="w-5 h-5" />
                                 Sign Out
@@ -76,7 +96,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                                 <button
                                     onClick={signIn}
                                     disabled={isSigningIn}
-                                    className="w-full flex items-center justify-center gap-3 px-4 py-3 text-sm font-bold rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="w-full flex items-center justify-center gap-3 px-4 py-3 text-sm font-black rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/20 disabled:opacity-50"
                                 >
                                     {isSigningIn ? (
                                         <>
@@ -91,7 +111,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                                     )}
                                 </button>
                                 {error && (
-                                    <p className="text-[10px] text-red-500 px-2 font-medium bg-red-50 dark:bg-red-900/10 py-1.5 rounded-lg border border-red-100 dark:border-red-900/20 animate-in fade-in slide-in-from-top-1 duration-200">
+                                    <p className="text-[10px] text-red-500 px-2 font-medium bg-red-50 dark:bg-red-900/10 py-1.5 rounded-lg border border-red-100 dark:border-red-900/20 animate-in fade-in slide-in-from-top-1">
                                         {error}
                                     </p>
                                 )}
@@ -102,20 +122,25 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
             </aside>
 
             {/* Main Content */}
-            <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+            <div className="flex-1 flex flex-col min-w-0 min-h-screen">
                 {/* Header */}
-                <header className="h-16 flex items-center justify-between px-6 bg-white dark:bg-zinc-900/50 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 shrink-0">
-                    <button
-                        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                        className="p-2 lg:hidden hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg"
-                    >
-                        {isSidebarOpen ? <X /> : <Menu />}
-                    </button>
-
-                    <div className="flex-1 lg:flex-none"></div>
-
+                <header className="sticky top-0 z-20 h-20 flex items-center justify-between px-6 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-b border-zinc-200 dark:border-zinc-800 shrink-0">
                     <div className="flex items-center gap-4">
-                        <button className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors">
+                        <button
+                            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                            className="p-3 lg:hidden hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 transition-colors"
+                        >
+                            {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
+                        </button>
+                        <div className="lg:hidden h-8 w-px bg-zinc-200 dark:bg-zinc-800" />
+                        <h1 className="text-lg font-black tracking-tight hidden sm:block">
+                            {location.pathname === '/' ? 'Dashboard' :
+                                location.pathname.slice(1).charAt(0).toUpperCase() + location.pathname.slice(2)}
+                        </h1>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                        <button className="p-3 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-all duration-300">
                             <Sun className="w-5 h-5 dark:hidden" />
                             <Moon className="w-5 h-5 hidden dark:block" />
                         </button>
@@ -123,17 +148,19 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                         {user && (
                             <div className="flex items-center gap-3 pl-4 border-l border-zinc-200 dark:border-zinc-800">
                                 <div className="text-right hidden sm:block">
-                                    <div className="text-sm font-bold">{user.getName()}</div>
-                                    <div className="text-xs text-zinc-500">{user.getEmail()}</div>
+                                    <div className="text-sm font-black text-zinc-900 dark:text-zinc-100 leading-none">{user.getName()}</div>
+                                    <div className="text-[10px] text-zinc-500 mt-1">{user.getEmail()}</div>
                                 </div>
-                                <img src={user.getImageUrl()} alt="Profile" className="w-9 h-9 rounded-full ring-2 ring-blue-500/20" />
+                                <img src={user.getImageUrl()} alt="Profile" className="w-10 h-10 rounded-2xl ring-2 ring-blue-500/10 object-cover" />
                             </div>
                         )}
                     </div>
                 </header>
 
-                <main className="flex-1 overflow-y-auto p-6 lg:p-10 custom-scrollbar">
-                    {children}
+                <main className="flex-1 p-4 sm:p-6 lg:p-10 overflow-y-auto">
+                    <div className="max-w-7xl mx-auto">
+                        {children}
+                    </div>
                 </main>
             </div>
 
@@ -142,8 +169,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
     );
 };
 
-const NavItem = ({ to, icon, label, active = false }: { to: string, icon: React.ReactNode, label: string, active?: boolean }) => (
-    <Link to={to} className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200 group ${active ? 'bg-blue-600/10 text-blue-600' : 'hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}`}>
+const NavItem = ({ to, icon, label, active = false, onClick }: { to: string, icon: React.ReactNode, label: string, active?: boolean, onClick?: () => void }) => (
+    <Link to={to} onClick={onClick} className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200 group ${active ? 'bg-blue-600/10 text-blue-600' : 'hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}`}>
         <span className={`transition-transform duration-200 group-hover:scale-110 ${active ? 'text-blue-600' : ''}`}>
             {React.cloneElement(icon as React.ReactElement<any>, { size: 22 })}
         </span>

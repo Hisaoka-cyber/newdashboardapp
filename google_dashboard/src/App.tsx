@@ -30,7 +30,7 @@ function AppContent() {
   }
 
   if (!clientId) {
-    const isIpAccess = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+    const isIpAccess = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(window.location.hostname) || window.location.hostname === '127.0.0.1';
     return (
       <div className="h-full flex flex-col items-center justify-center p-8 text-center max-w-lg mx-auto space-y-6">
         <div className="p-6 bg-blue-50 dark:bg-blue-900/10 rounded-3xl">
@@ -43,7 +43,7 @@ function AppContent() {
         {isIpAccess && (
           <div className="p-4 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900/30 rounded-xl text-left">
             <h4 className="text-xs font-bold text-red-600 uppercase mb-1">Warning: IP Access detected</h4>
-            <p className="text-[11px] text-red-500">Google OAuth only works on <strong>localhost</strong>. Please access via <a href={`http://localhost:${window.location.port}`} className="underline font-bold">http://localhost:{window.location.port}</a></p>
+            <p className="text-[11px] text-red-500">Google OAuth only works on <strong>localhost</strong> or HTTPS domains. Please access via <a href={`http://localhost:${window.location.port}`} className="underline font-bold">http://localhost:{window.location.port}</a> or the production URL.</p>
           </div>
         )}
         <div className="p-6 bg-zinc-100 dark:bg-zinc-800/50 rounded-2xl w-full border border-dashed border-zinc-300 dark:border-zinc-700">

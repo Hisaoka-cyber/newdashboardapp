@@ -8,13 +8,15 @@ interface SettingsModalProps {
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
-    const { clientId, setClientId } = useAuth();
-    const [inputValue, setInputValue] = useState(clientId);
+    const { clientId, setClientId, geminiApiKey, setGeminiApiKey } = useAuth();
+    const [clientInputValue, setClientInputValue] = useState(clientId);
+    const [geminiInputValue, setGeminiInputValue] = useState(geminiApiKey);
 
     if (!isOpen) return null;
 
     const handleSave = () => {
-        setClientId(inputValue);
+        setClientId(clientInputValue);
+        setGeminiApiKey(geminiInputValue);
         onClose();
     };
 
@@ -24,7 +26,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                 <div className="flex items-center justify-between p-6 border-b border-zinc-200 dark:border-zinc-800">
                     <h2 className="text-xl font-bold flex items-center gap-2">
                         <ShieldCheck className="w-6 h-6 text-blue-500" />
-                        Google API Settings
+                        Application Settings
                     </h2>
                     <button onClick={onClose} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors">
                         <X className="w-5 h-5" />
@@ -38,11 +40,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                             type="text"
                             className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm"
                             placeholder="000000000000-xxx.apps.googleusercontent.com"
-                            value={inputValue}
-                            onChange={(e) => setInputValue(e.target.value)}
+                            value={clientInputValue}
+                            onChange={(e) => setClientInputValue(e.target.value)}
+                        />
+                    </div>
+
+                    <div className="space-y-2">
+                        <label className="text-sm font-medium text-zinc-500">Gemini API Key</label>
+                        <input
+                            type="password"
+                            className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm"
+                            placeholder="AIzaSy..."
+                            value={geminiInputValue}
+                            onChange={(e) => setGeminiInputValue(e.target.value)}
                         />
                         <p className="text-xs text-zinc-400 mt-2">
-                            You can find this in the <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" className="text-blue-500 hover:underline inline-flex items-center gap-1">Google Cloud Console <ExternalLink className="w-3 h-3" /></a>
+                            Get your key from <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-blue-500 hover:underline inline-flex items-center gap-1">Google AI Studio <ExternalLink className="w-3 h-3" /></a>
                         </p>
                     </div>
 

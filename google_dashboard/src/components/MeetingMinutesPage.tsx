@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { FileText, Send, CheckSquare, Calendar, Users, ListChecks, HardDrive } from 'lucide-react';
+import { FileText, Send, CheckSquare, Calendar, Users, ListChecks, HardDrive, Mic, Music, Sparkles, Copy, Trash2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { gapi } from 'gapi-script';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 interface Template {
     id: string;
@@ -62,13 +63,16 @@ const templates: Template[] = [
 ];
 
 export const MeetingMinutesPage: React.FC = () => {
-    const { isSignedIn } = useAuth();
+    const { isSignedIn, geminiApiKey } = useAuth();
     const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
     const [isAddingTasks, setIsAddingTasks] = useState(false);
     const [driveFileId, setDriveFileId] = useState<string | null>(null);
     const [driveTemplateLink, setDriveTemplateLink] = useState<string | null>(null);
     const [isSendingEmail, setIsSendingEmail] = useState(false);
     const [driveMimeType, setDriveMimeType] = useState<string | null>(null);
+    const [audioFile, setAudioFile] = useState<File | null>(null);
+    const [isSummarizing, setIsSummarizing] = useState(false);
+    const [aiSummary, setAiSummary] = useState<string | null>(null);
 
     React.useEffect(() => {
         if (isSignedIn && selectedTemplate) {
@@ -322,6 +326,65 @@ export const MeetingMinutesPage: React.FC = () => {
         }
     };
 
+    const handleSummarize = async () => {
+        if (!geminiApiKey) {
+            alert('Gemini API Key is not set. Please go to Settings to add it.');
+            return;
+        }
+        if (!audioFile) return;
+
+        setIsSummarizing(true);
+        try {
+            const genAI = new GoogleGenerativeAI(geminiApiKey);
+            // Updating to Gemini 2.0 Flash (latest stable in 2026)
+            const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" }, { apiVersion: "v1beta" });
+
+            // Convert file to base64
+            const base64Audio = await new Promise<string>((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    const base64 = (reader.result as string).split(',')[1];
+                    resolve(base64);
+                };
+                reader.readAsDataURL(audioFile);
+            });
+
+            const prompt = `あなたは会議の議事録作成アシスタントです。提供された音声ファイルを解析し、以下の構造で日本語の要約を作成してください：
+1. 会議の主な目的
+2. 決定事項
+3. 次のアクション（担当者含む）
+4. その他重要なポイント
+簡潔かつ正確にまとめてください。`;
+
+            const result = await model.generateContent([
+                {
+                    inlineData: {
+                        mimeType: audioFile.type,
+                        data: base64Audio
+                    }
+                },
+                { text: prompt },
+            ]);
+
+            const response = await result.response;
+            setAiSummary(response.text());
+        } catch (error: any) {
+            console.error('Gemini error:', error);
+            if (error.message?.includes('429') || error.message?.toLowerCase().includes('ratelimit')) {
+                alert('Gemini APIの利用制限（Rate Limit）に達しました。無料版をご利用の場合、1分間に実行できる回数に制限があります。1分ほど待ってから再度お試しください。');
+            } else {
+                alert(`Summarization failed: ${error.message}`);
+            }
+        } finally {
+            setIsSummarizing(false);
+        }
+    };
+
+    const copyToClipboard = (text: string) => {
+        navigator.clipboard.writeText(text);
+        alert('Summary copied to clipboard!');
+    };
+
     const handleAddToTodo = async (template: Template) => {
         if (!isSignedIn) {
             alert('Please sign in to add tasks.');
@@ -444,7 +507,96 @@ export const MeetingMinutesPage: React.FC = () => {
 
                             <div className="flex-1 p-4 sm:p-8 overflow-y-auto">
                                 <div className="grid grid-cols-1 gap-8">
-                                    <section className="space-y-6">
+                                    <section className="space-y-8">
+                                        {/* AI Summarization Section */}
+                                        <div className="p-6 bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-900/10 dark:to-blue-900/10 rounded-3xl border border-indigo-100 dark:border-indigo-800">
+                                            <div className="flex items-center gap-3 mb-6">
+                                                <div className="p-2 bg-indigo-600 rounded-xl text-white">
+                                                    <Sparkles className="w-5 h-5" />
+                                                </div>
+                                                <h5 className="font-black text-lg">AI 議事録要約 (Gemini)</h5>
+                                            </div>
+
+                                            {!aiSummary ? (
+                                                <div className="space-y-4">
+                                                    <div className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-indigo-200 dark:border-indigo-800 rounded-2xl bg-white/50 dark:bg-zinc-900/50">
+                                                        {audioFile ? (
+                                                            <div className="flex items-center gap-4 w-full">
+                                                                <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl text-indigo-600">
+                                                                    <Music className="w-6 h-6" />
+                                                                </div>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <p className="font-bold text-sm truncate">{audioFile.name}</p>
+                                                                    <p className="text-[10px] text-zinc-500">{(audioFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                                                                </div>
+                                                                <button
+                                                                    onClick={() => setAudioFile(null)}
+                                                                    className="p-2 text-zinc-400 hover:text-red-500 transition-colors"
+                                                                >
+                                                                    <Trash2 className="w-5 h-5" />
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <label className="flex flex-col items-center cursor-pointer group">
+                                                                <Mic className="w-12 h-12 text-zinc-300 group-hover:text-indigo-500 transition-colors mb-2" />
+                                                                <span className="text-sm font-bold text-zinc-500 group-hover:text-indigo-600 transition-colors">録音データを選択 (MP3/WAV/AAC)</span>
+                                                                <input
+                                                                    type="file"
+                                                                    className="hidden"
+                                                                    accept="audio/*"
+                                                                    onChange={(e) => setAudioFile(e.target.files?.[0] || null)}
+                                                                />
+                                                            </label>
+                                                        )}
+                                                    </div>
+                                                    <button
+                                                        onClick={handleSummarize}
+                                                        disabled={!audioFile || isSummarizing}
+                                                        className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600 text-white rounded-xl font-black hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-500/20 disabled:opacity-50"
+                                                    >
+                                                        {isSummarizing ? (
+                                                            <>
+                                                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                                生成中...
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Sparkles className="w-4 h-4" />
+                                                                Geminiで要旨を作成
+                                                            </>
+                                                        )}
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-4 animate-in fade-in zoom-in duration-300">
+                                                    <div className="p-6 bg-white dark:bg-zinc-800 rounded-2xl border border-indigo-100 dark:border-indigo-800 shadow-sm overflow-hidden relative">
+                                                        <div className="absolute top-4 right-4 flex gap-2">
+                                                            <button
+                                                                onClick={() => copyToClipboard(aiSummary)}
+                                                                className="p-2 bg-zinc-50 dark:bg-zinc-700 rounded-lg text-zinc-500 hover:text-indigo-600 transition-colors"
+                                                                title="クリップボードにコピー"
+                                                            >
+                                                                <Copy className="w-4 h-4" />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => setAiSummary(null)}
+                                                                className="p-2 bg-zinc-50 dark:bg-zinc-700 rounded-lg text-zinc-500 hover:text-red-500 transition-colors"
+                                                                title="破棄"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
+                                                        <div className="prose prose-sm dark:prose-invert max-w-none">
+                                                            <pre className="whitespace-pre-wrap font-sans text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">
+                                                                {aiSummary}
+                                                            </pre>
+                                                        </div>
+                                                    </div>
+                                                    <p className="text-[10px] text-zinc-400 text-center italic">要旨をコピーして、以下のエディタに貼り付けてください。</p>
+                                                </div>
+                                            )}
+                                        </div>
+
                                         <div>
                                             <h5 className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-3">Minutes Editor (Google Doc)</h5>
                                             {driveFileId ? (
@@ -477,7 +629,7 @@ export const MeetingMinutesPage: React.FC = () => {
                                                     </div>
                                                 ))}
                                             </div>
-                                        </div >
+                                        </div>
                                     </section>
                                 </div>
                             </div>

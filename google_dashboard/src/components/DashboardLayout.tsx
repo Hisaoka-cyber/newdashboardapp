@@ -157,8 +157,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                     </div>
                 </header>
 
-                <main className="flex-1 p-4 sm:p-6 lg:p-10 overflow-y-auto">
-                    <div className="max-w-7xl mx-auto">
+                <main className={`flex-1 ${location.pathname === '/attendance' ? 'p-2 sm:p-4 overflow-hidden' : 'p-4 sm:p-6 lg:p-10 overflow-y-auto'} `}>
+                    <div className={`${location.pathname === '/attendance' ? 'max-w-none h-full' : (location.pathname === '/points' ? 'max-w-[1600px]' : 'max-w-7xl')} mx-auto w-full`}>
                         {children}
                     </div>
                 </main>

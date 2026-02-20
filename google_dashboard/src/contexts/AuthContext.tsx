@@ -6,6 +6,8 @@ interface AuthContextType {
     user: any;
     clientId: string;
     setClientId: (id: string) => void;
+    geminiApiKey: string;
+    setGeminiApiKey: (key: string) => void;
     signIn: () => void;
     signOut: () => void;
     isLoaded: boolean;
@@ -30,12 +32,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [isSigningIn, setIsSigningIn] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [clientId, setClientIdState] = useState(import.meta.env.VITE_GOOGLE_CLIENT_ID || localStorage.getItem('google_client_id') || '');
+    const [geminiApiKey, setGeminiApiKeyState] = useState(import.meta.env.VITE_GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || '');
     const [tokenClient, setTokenClient] = useState<any>(null);
 
     const setClientId = (id: string) => {
         localStorage.setItem('google_client_id', id);
         setClientIdState(id);
         window.location.reload();
+    };
+
+    const setGeminiApiKey = (key: string) => {
+        localStorage.setItem('gemini_api_key', key);
+        setGeminiApiKeyState(key);
     };
 
     const fetchUserInfo = async (accessToken: string) => {
@@ -152,7 +160,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     return (
-        <AuthContext.Provider value={{ isSignedIn, user, clientId, setClientId, signIn, signOut, isLoaded, isSigningIn, error }}>
+        <AuthContext.Provider value={{
+            isSignedIn,
+            user,
+            clientId,
+            setClientId,
+            geminiApiKey,
+            setGeminiApiKey,
+            signIn,
+            signOut,
+            isLoaded,
+            isSigningIn,
+            error
+        }}>
             {children}
         </AuthContext.Provider>
     );

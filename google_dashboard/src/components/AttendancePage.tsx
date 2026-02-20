@@ -99,7 +99,7 @@ export const AttendancePage: React.FC = () => {
                 </div>
             </header>
 
-            <div className="flex-1 min-h-0 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl overflow-hidden relative shadow-sm">
+            <div className="flex-1 min-h-[500px] h-[calc(100vh-16rem)] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl overflow-hidden relative shadow-sm">
                 {loading ? (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/50 dark:bg-zinc-900/50 backdrop-blur-sm z-10">
                         <Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-4" />

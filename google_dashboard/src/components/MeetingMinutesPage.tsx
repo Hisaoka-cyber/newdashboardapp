@@ -261,13 +261,21 @@ export const MeetingMinutesPage: React.FC = () => {
         }
 
         setIsOcrRunning(true);
-        setOcrProgressText('画像を変換・ダウンロード中...');
+        setOcrProgressText('画像をダウンロード中...');
         try {
             const selectedImage = folderImages.find(f => f.id === selectedImageId);
             if (!selectedImage) {
                 throw new Error('選択された画像の情報が見つかりません。');
             }
+            
+            const mimeType = selectedImage.mimeType || 'image/jpeg';
             const imageName = selectedImage.name;
+
+            // Check for HEIC format and throw clear error
+            if (mimeType.toLowerCase().includes('heic') || mimeType.toLowerCase().includes('heif') || imageName.toLowerCase().endsWith('.heic') || imageName.toLowerCase().endsWith('.heif')) {
+                throw new Error('HEIC形式の画像はGoogle Drive OCRで直接処理できません。お手数ですが、画像をJPEGまたはPNGに変換し、フォルダへ再アップロードしてからお試しください。');
+            }
+
             const nameWithoutExt = imageName.replace(/\.[^/.]+$/, "");
             const docName = `【文字起こし】${nameWithoutExt}`;
 
@@ -278,32 +286,20 @@ export const MeetingMinutesPage: React.FC = () => {
             }
             const accessToken = token.access_token;
 
-            // Step 2: Download the image via Google Drive Thumbnail Service
-            // This endpoint automatically converts HEIC/PNG/etc. into JPEG at high resolution (up to sz=w2500)
-            const thumbnailUrl = `https://drive.google.com/thumbnail?sz=w2500&id=${selectedImageId}`;
-            console.log('[OCR] Fetching JPEG from thumbnail service:', thumbnailUrl);
+            // Step 2: Download the image directly from the Drive API (supports CORS)
+            const downloadUrl = `https://www.googleapis.com/drive/v3/files/${selectedImageId}?alt=media`;
+            console.log('[OCR] Downloading media from Drive API (CORS enabled):', downloadUrl);
             
-            const downloadRes = await fetch(
-                thumbnailUrl,
-                { headers: { Authorization: `Bearer ${accessToken}` } }
-            );
+            const downloadRes = await fetch(downloadUrl, {
+                headers: { Authorization: `Bearer ${accessToken}` }
+            });
             
-            let imageBlob: Blob;
             if (!downloadRes.ok) {
-                // If thumbnail service fails, fallback to downloading original media
-                console.warn('[OCR] Thumbnail download failed, falling back to original media.');
-                const fallbackUrl = `https://www.googleapis.com/drive/v3/files/${selectedImageId}?alt=media`;
-                const fallbackRes = await fetch(fallbackUrl, {
-                    headers: { Authorization: `Bearer ${accessToken}` }
-                });
-                if (!fallbackRes.ok) {
-                    const errText = await fallbackRes.text();
-                    throw new Error(`画像のダウンロードに失敗しました: ${fallbackRes.status} ${errText}`);
-                }
-                imageBlob = await fallbackRes.blob();
-            } else {
-                imageBlob = await downloadRes.blob();
+                const errText = await downloadRes.text();
+                throw new Error(`画像のダウンロードに失敗しました: ${downloadRes.status} ${errText}`);
             }
+            
+            const imageBlob = await downloadRes.blob();
 
             setOcrProgressText('Google Driveにアップロード中 (OCR変換)...');
 
@@ -320,15 +316,12 @@ export const MeetingMinutesPage: React.FC = () => {
 
             const metadataPart = JSON.stringify(metadata);
 
-            // Determine MIME type (use image/jpeg for thumbnail, otherwise fallback to original blob type)
-            const uploadMimeType = downloadRes.ok ? 'image/jpeg' : imageBlob.type;
-
             const multipartBody = new Blob([
                 delimiter,
                 'Content-Type: application/json; charset=UTF-8\r\n\r\n',
                 metadataPart,
                 delimiter,
-                `Content-Type: ${uploadMimeType}\r\n\r\n`,
+                `Content-Type: ${mimeType}\r\n\r\n`,
                 imageBlob,
                 closeDelimiter
             ]);

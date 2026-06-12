@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { FileText, Send, CheckSquare, Calendar, Users, ListChecks, HardDrive, Mic, Music, Sparkles, Copy, Trash2, Loader2, RefreshCw, Image } from 'lucide-react';
+import { FileText, Send, CheckSquare, Calendar, Users, ListChecks, HardDrive, Mic, Music, Sparkles, Copy, Trash2, Loader2, RefreshCw, Image, ExternalLink } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { gapi } from 'gapi-script';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -81,6 +81,8 @@ export const MeetingMinutesPage: React.FC = () => {
     const [isOcrRunning, setIsOcrRunning] = useState(false);
     const [ocrProgressText, setOcrProgressText] = useState<string>('');
     const [selectedImageId, setSelectedImageId] = useState<string>('');
+    const [ocrResultText, setOcrResultText] = useState<string | null>(null);
+    const [createdDocId, setCreatedDocId] = useState<string | null>(null);
 
     useEffect(() => {
         if (isSignedIn && selectedTemplate) {
@@ -345,9 +347,20 @@ export const MeetingMinutesPage: React.FC = () => {
 
             const result = await uploadRes.json();
             if (result.id) {
+                setOcrProgressText('文字起こしテキストを取得中...');
+                const textResponse = await (gapi.client as any).drive.files.export({
+                    fileId: result.id,
+                    mimeType: 'text/plain'
+                });
+                const rawText = textResponse.result || textResponse.body || '';
+                
+                // Clean the text from carriage returns if any
+                const cleanExtractedText = rawText.replace(/\r\n/g, '\n');
+                
+                setOcrResultText(cleanExtractedText);
+                setCreatedDocId(result.id);
                 setOcrProgressText('完了しました！');
-                alert(`「${docName}」が作成され、画像内の文字起こし（OCR）が完了しました！`);
-                window.open(`https://docs.google.com/document/d/${result.id}/edit`, '_blank');
+                alert(`「${docName}」が作成され、文字起こしが完了しました！\n結果をアプリ内で確認できます。`);
             } else {
                 throw new Error('新しいGoogleドキュメントのIDが返されませんでした。');
             }
@@ -830,7 +843,48 @@ export const MeetingMinutesPage: React.FC = () => {
                                                         <h5 className="font-black text-lg">画像から文字起こし (Drive OCR)</h5>
                                                     </div>
 
-                                                    {!meetingFolderId && !loadingImages ? (
+                                                    {ocrResultText ? (
+                                                        <div className="space-y-4 animate-in fade-in zoom-in duration-300">
+                                                            <div className="p-4 bg-white dark:bg-zinc-800 rounded-2xl border border-amber-100 dark:border-amber-800 shadow-sm overflow-hidden relative">
+                                                                <div className="absolute top-4 right-4 flex gap-2">
+                                                                    <button
+                                                                        onClick={() => copyToClipboard(ocrResultText)}
+                                                                        className="p-2 bg-zinc-50 dark:bg-zinc-700 rounded-lg text-zinc-500 hover:text-amber-600 transition-colors"
+                                                                        title="クリップボードにコピー"
+                                                                    >
+                                                                        <Copy className="w-4 h-4" />
+                                                                    </button>
+                                                                    {createdDocId && (
+                                                                        <a
+                                                                            href={`https://docs.google.com/document/d/${createdDocId}/edit`}
+                                                                            target="_blank"
+                                                                            rel="noreferrer"
+                                                                            className="p-2 bg-zinc-50 dark:bg-zinc-700 rounded-lg text-zinc-500 hover:text-blue-600 transition-colors flex items-center justify-center"
+                                                                            title="Googleドキュメントで開く"
+                                                                        >
+                                                                            <ExternalLink className="w-4 h-4" />
+                                                                        </a>
+                                                                    )}
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            setOcrResultText(null);
+                                                                            setCreatedDocId(null);
+                                                                        }}
+                                                                        className="p-2 bg-zinc-50 dark:bg-zinc-700 rounded-lg text-zinc-500 hover:text-red-500 transition-colors"
+                                                                        title="破棄"
+                                                                    >
+                                                                        <Trash2 className="w-4 h-4" />
+                                                                    </button>
+                                                                </div>
+                                                                <div className="prose prose-sm dark:prose-invert max-w-none mt-8">
+                                                                    <pre className="whitespace-pre-wrap font-sans text-xs text-zinc-700 dark:text-zinc-300 leading-relaxed max-h-[300px] overflow-y-auto pr-2">
+                                                                        {ocrResultText}
+                                                                    </pre>
+                                                                </div>
+                                                            </div>
+                                                            <p className="text-[10px] text-zinc-400 text-center italic">文字起こし結果をコピーして利用できます。</p>
+                                                        </div>
+                                                    ) : !meetingFolderId && !loadingImages ? (
                                                         <div className="p-5 bg-white/50 dark:bg-zinc-900/50 rounded-2xl border border-dashed border-amber-200 dark:border-amber-800 text-center text-xs text-zinc-500 space-y-3">
                                                             <p className="font-bold text-zinc-700 dark:text-zinc-300">フォルダが見つかりませんでした</p>
                                                             <p>検索対象フォルダ名：「<span className="font-mono text-amber-700 dark:text-amber-400">{selectedTemplate.id === 'improvement' ? '改善活動推進委員会' : '統合情報部門会議'}</span>」</p>

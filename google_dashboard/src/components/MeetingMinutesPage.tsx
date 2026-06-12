@@ -3,7 +3,6 @@ import { FileText, Send, CheckSquare, Calendar, Users, ListChecks, HardDrive, Mi
 import { useAuth } from '../contexts/AuthContext';
 import { gapi } from 'gapi-script';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { createWorker } from 'tesseract.js';
 
 interface Template {
     id: string;
@@ -262,6 +261,7 @@ export const MeetingMinutesPage: React.FC = () => {
         }
 
         setIsOcrRunning(true);
+        setOcrProgressText('画像を変換・ダウンロード中...');
         try {
             const selectedImage = folderImages.find(f => f.id === selectedImageId);
             if (!selectedImage) {
@@ -278,114 +278,69 @@ export const MeetingMinutesPage: React.FC = () => {
             }
             const accessToken = token.access_token;
 
-            // Step 2: Download the image binary from Google Drive
+            // Step 2: Download the image via Google Drive Thumbnail Service
+            // This endpoint automatically converts HEIC/PNG/etc. into JPEG at high resolution (up to sz=w2500)
+            const thumbnailUrl = `https://drive.google.com/thumbnail?sz=w2500&id=${selectedImageId}`;
+            console.log('[OCR] Fetching JPEG from thumbnail service:', thumbnailUrl);
+            
             const downloadRes = await fetch(
-                `https://www.googleapis.com/drive/v3/files/${selectedImageId}?alt=media`,
+                thumbnailUrl,
                 { headers: { Authorization: `Bearer ${accessToken}` } }
             );
+            
+            let imageBlob: Blob;
             if (!downloadRes.ok) {
-                const errText = await downloadRes.text();
-                throw new Error(`画像のダウンロードに失敗しました: ${downloadRes.status} ${errText}`);
-            }
-            
-            const imageBlob = await downloadRes.blob();
-            
-            // ブラウザのネイティブ機能で画像をデコード（Tesseractのパースエラー回避のため）
-            const imageElement = new window.Image();
-            const objectUrl = URL.createObjectURL(imageBlob);
-            
-            await new Promise((resolve, reject) => {
-                imageElement.onload = resolve;
-                imageElement.onerror = () => reject(new Error(`ダウンロードしたデータが不正な画像フォーマットです。(サイズ: ${imageBlob.size} bytes)`));
-                imageElement.src = objectUrl;
-            });
-            
-            // Canvasに描画して生のピクセルデータを取得可能な状態にする
-            const canvas = document.createElement('canvas');
-            canvas.width = imageElement.width;
-            canvas.height = imageElement.height;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) throw new Error('Canvas 2D context could not be created');
-            ctx.drawImage(imageElement, 0, 0);
-            
-            URL.revokeObjectURL(objectUrl);
-
-            // Step 3: Run Tesseract.js in the browser
-            // By doing OCR entirely on the client, we bypass Google Drive's broken OCR completely.
-            setOcrProgressText('OCRエンジンを準備中...');
-            const worker = await createWorker('jpn', 1, {
-                logger: m => {
-                    console.log('[Tesseract.js]', m);
-                    if (m.status === 'loading language traineddata') {
-                        setOcrProgressText(`日本語学習データをロード中: ${Math.round((m.progress || 0) * 100)}%`);
-                    } else if (m.status === 'recognizing text') {
-                        setOcrProgressText(`文字を認識中: ${Math.round((m.progress || 0) * 100)}%`);
-                    } else {
-                        const statusMap: Record<string, string> = {
-                            'loading tesseract core': 'Tesseractコアをロード中',
-                            'initializing api': 'API初期化中',
-                            'initialized api': 'API初期化完了',
-                        };
-                        setOcrProgressText(`${statusMap[m.status] || m.status}...`);
-                    }
-                },
-                errorHandler: err => {
-                    console.error('[Tesseract.js Error]', err);
-                    setOcrProgressText(`エラー: ${err.message || String(err)}`);
+                // If thumbnail service fails, fallback to downloading original media
+                console.warn('[OCR] Thumbnail download failed, falling back to original media.');
+                const fallbackUrl = `https://www.googleapis.com/drive/v3/files/${selectedImageId}?alt=media`;
+                const fallbackRes = await fetch(fallbackUrl, {
+                    headers: { Authorization: `Bearer ${accessToken}` }
+                });
+                if (!fallbackRes.ok) {
+                    const errText = await fallbackRes.text();
+                    throw new Error(`画像のダウンロードに失敗しました: ${fallbackRes.status} ${errText}`);
                 }
-            });
-
-            setOcrProgressText('文字起こしを実行中...');
-            // Tesseractにパース済みCanvasを渡す（Error attempting to read image を完全回避）
-            const { data: { text } } = await worker.recognize(canvas);
-            await worker.terminate();
-
-            if (!text || text.trim().length === 0) {
-                throw new Error('画像から文字を検出できませんでした。');
+                imageBlob = await fallbackRes.blob();
+            } else {
+                imageBlob = await downloadRes.blob();
             }
 
-            // Remove unwanted spaces that Tesseract sometimes adds between Japanese characters
-            const cleanText = text.replace(/([^\x01-\x7E])\s+([^\x01-\x7E])/g, '$1$2');
+            setOcrProgressText('Google Driveにアップロード中 (OCR変換)...');
 
-            // Step 4: Create Google Doc from extracted text
-            // Text-to-Google Doc conversion is perfectly supported and won't fail.
+            // Step 3: Upload using multipart related upload to convert to Google Doc
+            const boundary = 'foo_bar_baz_boundary';
+            const delimiter = `\r\n--${boundary}\r\n`;
+            const closeDelimiter = `\r\n--${boundary}--\r\n`;
+
             const metadata = {
                 name: docName,
                 mimeType: 'application/vnd.google-apps.document',
                 parents: [meetingFolderId]
             };
 
-            const initRes = await fetch(
-                `https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable`,
-                {
-                    method: 'POST',
-                    headers: {
-                        Authorization: `Bearer ${accessToken}`,
-                        'Content-Type': 'application/json',
-                        'X-Upload-Content-Type': 'text/plain'
-                    },
-                    body: JSON.stringify(metadata)
-                }
-            );
+            const metadataPart = JSON.stringify(metadata);
 
-            if (!initRes.ok) {
-                const errJson = await initRes.json().catch(() => ({}));
-                throw new Error(`アップロードセッションの開始に失敗しました: ${initRes.status}\n${JSON.stringify(errJson)}`);
-            }
+            // Determine MIME type (use image/jpeg for thumbnail, otherwise fallback to original blob type)
+            const uploadMimeType = downloadRes.ok ? 'image/jpeg' : imageBlob.type;
 
-            // Get the upload URL from the Location header
-            const uploadUrl = initRes.headers.get('Location');
-            if (!uploadUrl) {
-                throw new Error('アップロード用URL（Locationヘッダー）が取得できませんでした。');
-            }
+            const multipartBody = new Blob([
+                delimiter,
+                'Content-Type: application/json; charset=UTF-8\r\n\r\n',
+                metadataPart,
+                delimiter,
+                `Content-Type: ${uploadMimeType}\r\n\r\n`,
+                imageBlob,
+                closeDelimiter
+            ]);
 
-            // Upload the extracted text
+            const uploadUrl = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&ocrLanguage=ja';
             const uploadRes = await fetch(uploadUrl, {
-                method: 'PUT',
+                method: 'POST',
                 headers: {
-                    'Content-Type': 'text/plain'
+                    Authorization: `Bearer ${accessToken}`,
+                    'Content-Type': `multipart/related; boundary=${boundary}`
                 },
-                body: cleanText
+                body: multipartBody
             });
 
             if (!uploadRes.ok) {
@@ -397,6 +352,7 @@ export const MeetingMinutesPage: React.FC = () => {
 
             const result = await uploadRes.json();
             if (result.id) {
+                setOcrProgressText('完了しました！');
                 alert(`「${docName}」が作成され、画像内の文字起こし（OCR）が完了しました！`);
                 window.open(`https://docs.google.com/document/d/${result.id}/edit`, '_blank');
             } else {

@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
-import { FileText, Send, CheckSquare, Calendar, Users, ListChecks, HardDrive, Mic, Music, Sparkles, Copy, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { FileText, Send, CheckSquare, Calendar, Users, ListChecks, HardDrive, Mic, Music, Sparkles, Copy, Trash2, Loader2, RefreshCw, Image } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { gapi } from 'gapi-script';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { createWorker } from 'tesseract.js';
 
 interface Template {
     id: string;
@@ -38,8 +39,8 @@ const templates: Template[] = [
         ]
     },
     {
-        id: 'support',
-        title: '患者サポート部門会議',
+        id: 'integration',
+        title: '統合情報部門会議',
         recipients: [
             'daisuke_miyamoto@saimiya.com',
             '"fumie_sonobe@saimiya.com" <fumie_sonobe@saimiya.com>',
@@ -51,13 +52,13 @@ const templates: Template[] = [
             'yukiko_nakajima@saimiya.com',
             'keigo_muroi@saimiya.com'
         ],
-        subject: 'YYYYMMDD患者サポート部門会議',
-        body: `YYYYMMDD患者サービス部門会議の議事録です\n久岡　裕明`,
+        subject: 'YYYYMMDD統合情報部門会議',
+        body: `YYYYMMDD統合情報部門会議の議事録です\n久岡　裕明`,
         subtasks: [
-            '患者サポート部門会議 準備',
-            '患者サポート部門会議 出席',
-            '患者サポート部門会議 議事録作成',
-            '患者サポート部門会議 配信'
+            '統合情報部門会議 準備',
+            '統合情報部門会議 出席',
+            '統合情報部門会議 議事録作成',
+            '統合情報部門会議 配信'
         ]
     }
 ];
@@ -74,7 +75,15 @@ export const MeetingMinutesPage: React.FC = () => {
     const [isSummarizing, setIsSummarizing] = useState(false);
     const [aiSummary, setAiSummary] = useState<string | null>(null);
 
-    React.useEffect(() => {
+    // Google Drive OCR states
+    const [meetingFolderId, setMeetingFolderId] = useState<string | null>(null);
+    const [folderImages, setFolderImages] = useState<any[]>([]);
+    const [loadingImages, setLoadingImages] = useState(false);
+    const [isOcrRunning, setIsOcrRunning] = useState(false);
+    const [ocrProgressText, setOcrProgressText] = useState<string>('');
+    const [selectedImageId, setSelectedImageId] = useState<string>('');
+
+    useEffect(() => {
         if (isSignedIn && selectedTemplate) {
             findDriveTemplate();
         }
@@ -82,51 +91,86 @@ export const MeetingMinutesPage: React.FC = () => {
 
     const findDriveTemplate = async () => {
         if (!selectedTemplate) return;
+        setMeetingFolderId(null);
         try {
-            // Helper function to find by name and optional parent
+            const folderName = selectedTemplate.id === 'improvement'
+                ? '改善活動推進委員会'
+                : '統合情報部門会議';
+
+            const templateName = selectedTemplate.id === 'improvement'
+                ? '改善活動推進委員会(テンプレート).docx'
+                : '統合情報部門会議（テンプレート）.docx';
+
+            // Helper to search for a file/folder by name
             const searchFile = async (name: string, parentId?: string) => {
                 let query = `name = '${name}' and trashed = false`;
                 if (parentId) query += ` and '${parentId}' in parents`;
-                const response = await (gapi.client as any).drive.files.list({
+                const res = await (gapi.client as any).drive.files.list({
                     q: query,
                     fields: 'files(id, webViewLink, mimeType)',
                     pageSize: 1
                 });
-                return response.result.files?.[0];
+                return res.result.files?.[0];
             };
 
-            const templateName = selectedTemplate.id === 'improvement'
-                ? '改善活動推進委員会(テンプレート).docx'
-                : '患者サポート部門会議（テンプレート）.docx';
-
-            // 1. Try specific path navigation first
-            let file = null;
+            // --- STEP 1: Global folder search by exact name (most reliable) ---
+            let folderId: string | null = null;
             try {
-                const findFolderId = async (name: string, pId: string = 'root') => {
-                    const res = await (gapi.client as any).drive.files.list({
-                        q: `name = '${name}' and '${pId}' in parents and trashed = false`,
-                        fields: 'files(id)'
-                    });
-                    return res.result.files?.[0]?.id;
-                };
-
-                const workFolderId = await findFolderId('職場の仕事');
-                if (workFolderId) {
-                    const deptFolderId = await findFolderId('課内業務', workFolderId);
-                    if (deptFolderId) {
-                        const committeeFolderId = await findFolderId('改善活動推進委員会', deptFolderId);
-                        if (committeeFolderId) {
-                            file = await searchFile(templateName, committeeFolderId);
-                        }
-                    }
+                const folderRes = await (gapi.client as any).drive.files.list({
+                    q: `name = '${folderName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+                    fields: 'files(id, name, parents)',
+                    pageSize: 5
+                });
+                const folders = folderRes.result.files || [];
+                if (folders.length > 0) {
+                    folderId = folders[0].id;
+                    console.log(`[Drive] Found folder "${folderName}" with ID: ${folderId}`);
+                } else {
+                    console.warn(`[Drive] No folder found with name "${folderName}". Trying path navigation...`);
                 }
-            } catch (e) {
-                console.warn('Path navigation failed, falling back to global search:', e);
+            } catch (err) {
+                console.error('[Drive] Global folder search failed:', err);
             }
 
-            // 2. Global fallback search
-            if (!file) {
-                file = await searchFile(templateName);
+            // --- STEP 2: Path navigation fallback ---
+            if (!folderId) {
+                try {
+                    const findFolderByName = async (name: string, parentId?: string) => {
+                        let q = `name = '${name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+                        if (parentId) q += ` and '${parentId}' in parents`;
+                        const res = await (gapi.client as any).drive.files.list({ q, fields: 'files(id)' });
+                        return res.result.files?.[0]?.id;
+                    };
+                    const workId = await findFolderByName('職場の仕事');
+                    if (workId) {
+                        const deptId = await findFolderByName('課内業務', workId);
+                        if (deptId) {
+                            const meetId = await findFolderByName(folderName, deptId);
+                            if (meetId) folderId = meetId;
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[Drive] Path navigation also failed:', e);
+                }
+            }
+
+            if (folderId) {
+                setMeetingFolderId(folderId);
+            } else {
+                console.error(`[Drive] Could not find folder: "${folderName}"`);
+            }
+
+            // --- Find template file ---
+            let file = await searchFile(templateName, folderId || undefined);
+            if (!file) file = await searchFile(templateName); // global fallback
+
+            // If file found but still no folderId, derive from file's parent
+            if (file && !folderId) {
+                try {
+                    const det = await (gapi.client as any).drive.files.get({ fileId: file.id, fields: 'parents' });
+                    folderId = det.result.parents?.[0] || null;
+                    if (folderId) setMeetingFolderId(folderId);
+                } catch (_) {}
             }
 
             if (file) {
@@ -138,7 +182,233 @@ export const MeetingMinutesPage: React.FC = () => {
                 setDriveTemplateLink(null);
             }
         } catch (error) {
-            console.error('Error finding Drive template:', error);
+            console.error('[Drive] Error in findDriveTemplate:', error);
+        }
+    };
+
+    // Debug: List all folders in Drive to help identify the correct folder name
+    const debugListAllFolders = async () => {
+        try {
+            const res = await (gapi.client as any).drive.files.list({
+                q: `mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+                fields: 'files(id, name, parents)',
+                pageSize: 50,
+                orderBy: 'name'
+            });
+            const folders = res.result.files || [];
+            if (folders.length === 0) {
+                alert('Drive内にアクセス可能なフォルダが見つかりませんでした。\n\nサインインし直してから再試行してください。');
+                return;
+            }
+            const names = folders.map((f: any) => f.name).join('\n');
+            alert(`Drive内のフォルダ一覧 (${folders.length}件):\n\n${names}`);
+        } catch (err: any) {
+            const status = err?.status || err?.result?.error?.code;
+            if (status === 401 || status === 403) {
+                alert('認証エラー（401/403）:\nGoogleセッションが期限切れです。\n\n一度サインアウトして再度サインインしてください。');
+            } else {
+                alert('フォルダ一覧の取得に失敗しました。\nエラー: ' + (err?.result?.error?.message || err?.message || JSON.stringify(err)));
+            }
+        }
+    };
+
+
+    const fetchFolderImages = useCallback(async (folderId: string) => {
+        setLoadingImages(true);
+        try {
+            const response = await (gapi.client as any).drive.files.list({
+                q: `'${folderId}' in parents and (mimeType contains 'image/' or mimeType = 'image/jpeg' or mimeType = 'image/png' or mimeType = 'image/gif') and trashed = false`,
+                fields: 'files(id, name, modifiedTime, thumbnailLink, webViewLink, mimeType)',
+                orderBy: 'modifiedTime desc',
+                pageSize: 15
+            });
+            const files = response.result.files || [];
+            setFolderImages(files);
+            if (files.length > 0) {
+                setSelectedImageId(files[0].id);
+            } else {
+                setSelectedImageId('');
+            }
+        } catch (error: any) {
+            const status = error?.status || error?.result?.error?.code;
+            if (status === 401 || status === 403) {
+                console.error('[Drive] Auth error fetching images. Token may be expired.');
+                alert('認証エラー: Googleセッションが期限切れです。\nサインアウトして再度サインインしてください。');
+            } else {
+                console.error('Error fetching images in folder:', error);
+            }
+        } finally {
+            setLoadingImages(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (meetingFolderId) {
+            fetchFolderImages(meetingFolderId);
+        } else {
+            setFolderImages([]);
+            setSelectedImageId('');
+        }
+    }, [meetingFolderId, fetchFolderImages]);
+
+    const handleOcrImage = async () => {
+        if (!selectedImageId) {
+            alert('画像を選択してください。');
+            return;
+        }
+        if (!meetingFolderId) {
+            alert('アップロード先のフォルダが見つかりません。');
+            return;
+        }
+
+        setIsOcrRunning(true);
+        try {
+            const selectedImage = folderImages.find(f => f.id === selectedImageId);
+            if (!selectedImage) {
+                throw new Error('選択された画像の情報が見つかりません。');
+            }
+            const imageName = selectedImage.name;
+            const nameWithoutExt = imageName.replace(/\.[^/.]+$/, "");
+            const docName = `【文字起こし】${nameWithoutExt}`;
+
+            // Step 1: Get an access token from gapi
+            const token = gapi.auth.getToken();
+            if (!token?.access_token) {
+                throw new Error('アクセストークンが取得できませんでした。再度サインインしてください。');
+            }
+            const accessToken = token.access_token;
+
+            // Step 2: Download the image binary from Google Drive
+            const downloadRes = await fetch(
+                `https://www.googleapis.com/drive/v3/files/${selectedImageId}?alt=media`,
+                { headers: { Authorization: `Bearer ${accessToken}` } }
+            );
+            if (!downloadRes.ok) {
+                const errText = await downloadRes.text();
+                throw new Error(`画像のダウンロードに失敗しました: ${downloadRes.status} ${errText}`);
+            }
+            
+            const imageBlob = await downloadRes.blob();
+            
+            // ブラウザのネイティブ機能で画像をデコード（Tesseractのパースエラー回避のため）
+            const imageElement = new window.Image();
+            const objectUrl = URL.createObjectURL(imageBlob);
+            
+            await new Promise((resolve, reject) => {
+                imageElement.onload = resolve;
+                imageElement.onerror = () => reject(new Error(`ダウンロードしたデータが不正な画像フォーマットです。(サイズ: ${imageBlob.size} bytes)`));
+                imageElement.src = objectUrl;
+            });
+            
+            // Canvasに描画して生のピクセルデータを取得可能な状態にする
+            const canvas = document.createElement('canvas');
+            canvas.width = imageElement.width;
+            canvas.height = imageElement.height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) throw new Error('Canvas 2D context could not be created');
+            ctx.drawImage(imageElement, 0, 0);
+            
+            URL.revokeObjectURL(objectUrl);
+
+            // Step 3: Run Tesseract.js in the browser
+            // By doing OCR entirely on the client, we bypass Google Drive's broken OCR completely.
+            setOcrProgressText('OCRエンジンを準備中...');
+            const worker = await createWorker('jpn', 1, {
+                logger: m => {
+                    console.log('[Tesseract.js]', m);
+                    if (m.status === 'loading language traineddata') {
+                        setOcrProgressText(`日本語学習データをロード中: ${Math.round((m.progress || 0) * 100)}%`);
+                    } else if (m.status === 'recognizing text') {
+                        setOcrProgressText(`文字を認識中: ${Math.round((m.progress || 0) * 100)}%`);
+                    } else {
+                        const statusMap: Record<string, string> = {
+                            'loading tesseract core': 'Tesseractコアをロード中',
+                            'initializing api': 'API初期化中',
+                            'initialized api': 'API初期化完了',
+                        };
+                        setOcrProgressText(`${statusMap[m.status] || m.status}...`);
+                    }
+                },
+                errorHandler: err => {
+                    console.error('[Tesseract.js Error]', err);
+                    setOcrProgressText(`エラー: ${err.message || String(err)}`);
+                }
+            });
+
+            setOcrProgressText('文字起こしを実行中...');
+            // Tesseractにパース済みCanvasを渡す（Error attempting to read image を完全回避）
+            const { data: { text } } = await worker.recognize(canvas);
+            await worker.terminate();
+
+            if (!text || text.trim().length === 0) {
+                throw new Error('画像から文字を検出できませんでした。');
+            }
+
+            // Remove unwanted spaces that Tesseract sometimes adds between Japanese characters
+            const cleanText = text.replace(/([^\x01-\x7E])\s+([^\x01-\x7E])/g, '$1$2');
+
+            // Step 4: Create Google Doc from extracted text
+            // Text-to-Google Doc conversion is perfectly supported and won't fail.
+            const metadata = {
+                name: docName,
+                mimeType: 'application/vnd.google-apps.document',
+                parents: [meetingFolderId]
+            };
+
+            const initRes = await fetch(
+                `https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable`,
+                {
+                    method: 'POST',
+                    headers: {
+                        Authorization: `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json',
+                        'X-Upload-Content-Type': 'text/plain'
+                    },
+                    body: JSON.stringify(metadata)
+                }
+            );
+
+            if (!initRes.ok) {
+                const errJson = await initRes.json().catch(() => ({}));
+                throw new Error(`アップロードセッションの開始に失敗しました: ${initRes.status}\n${JSON.stringify(errJson)}`);
+            }
+
+            // Get the upload URL from the Location header
+            const uploadUrl = initRes.headers.get('Location');
+            if (!uploadUrl) {
+                throw new Error('アップロード用URL（Locationヘッダー）が取得できませんでした。');
+            }
+
+            // Upload the extracted text
+            const uploadRes = await fetch(uploadUrl, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'text/plain'
+                },
+                body: cleanText
+            });
+
+            if (!uploadRes.ok) {
+                const errJson = await uploadRes.json().catch(() => ({}));
+                const msg = (errJson as any)?.error?.message || uploadRes.statusText;
+                const details = JSON.stringify((errJson as any)?.error || errJson, null, 2);
+                throw new Error(`Googleドキュメントへの変換に失敗しました: ${uploadRes.status} ${msg}\n詳細: ${details}`);
+            }
+
+            const result = await uploadRes.json();
+            if (result.id) {
+                alert(`「${docName}」が作成され、画像内の文字起こし（OCR）が完了しました！`);
+                window.open(`https://docs.google.com/document/d/${result.id}/edit`, '_blank');
+            } else {
+                throw new Error('新しいGoogleドキュメントのIDが返されませんでした。');
+            }
+        } catch (err: any) {
+            console.error('OCR error:', err);
+            const errMsg = err?.result?.error?.message || err?.message || String(err);
+            alert(`OCR変換中にエラーが発生しました:\n${errMsg}`);
+        } finally {
+            setIsOcrRunning(false);
+            setOcrProgressText('');
         }
     };
 
@@ -508,93 +778,233 @@ export const MeetingMinutesPage: React.FC = () => {
                             <div className="flex-1 p-4 sm:p-8 overflow-y-auto">
                                 <div className="grid grid-cols-1 gap-8">
                                     <section className="space-y-8">
-                                        {/* AI Summarization Section */}
-                                        <div className="p-6 bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-900/10 dark:to-blue-900/10 rounded-3xl border border-indigo-100 dark:border-indigo-800">
-                                            <div className="flex items-center gap-3 mb-6">
-                                                <div className="p-2 bg-indigo-600 rounded-xl text-white">
-                                                    <Sparkles className="w-5 h-5" />
+                                        {/* AI Input Section Grid */}
+                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                            {/* AI Summarization Section */}
+                                            <div className="p-6 bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-900/10 dark:to-blue-900/10 rounded-3xl border border-indigo-100 dark:border-indigo-800 flex flex-col justify-between">
+                                                <div>
+                                                    <div className="flex items-center gap-3 mb-6">
+                                                        <div className="p-2 bg-indigo-600 rounded-xl text-white">
+                                                            <Sparkles className="w-5 h-5" />
+                                                        </div>
+                                                        <h5 className="font-black text-lg">AI 議事録要約 (Gemini)</h5>
+                                                    </div>
+
+                                                    {!aiSummary ? (
+                                                        <div className="space-y-4">
+                                                            <div className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-indigo-200 dark:border-indigo-800 rounded-2xl bg-white/50 dark:bg-zinc-900/50">
+                                                                {audioFile ? (
+                                                                    <div className="flex items-center gap-4 w-full">
+                                                                        <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl text-indigo-600">
+                                                                            <Music className="w-6 h-6" />
+                                                                        </div>
+                                                                        <div className="flex-1 min-w-0">
+                                                                            <p className="font-bold text-sm truncate">{audioFile.name}</p>
+                                                                            <p className="text-[10px] text-zinc-500">{(audioFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                                                                        </div>
+                                                                        <button
+                                                                            onClick={() => setAudioFile(null)}
+                                                                            className="p-2 text-zinc-400 hover:text-red-500 transition-colors"
+                                                                        >
+                                                                            <Trash2 className="w-5 h-5" />
+                                                                        </button>
+                                                                    </div>
+                                                                ) : (
+                                                                    <label className="flex flex-col items-center cursor-pointer group">
+                                                                        <Mic className="w-12 h-12 text-zinc-300 group-hover:text-indigo-500 transition-colors mb-2" />
+                                                                        <span className="text-sm font-bold text-zinc-500 group-hover:text-indigo-600 transition-colors">録音データを選択 (MP3/WAV/AAC)</span>
+                                                                        <input
+                                                                            type="file"
+                                                                            className="hidden"
+                                                                            accept="audio/*"
+                                                                            onChange={(e) => setAudioFile(e.target.files?.[0] || null)}
+                                                                        />
+                                                                    </label>
+                                                                )}
+                                                            </div>
+                                                            <button
+                                                                onClick={handleSummarize}
+                                                                disabled={!audioFile || isSummarizing}
+                                                                className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600 text-white rounded-xl font-black hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-500/20 disabled:opacity-50"
+                                                            >
+                                                                {isSummarizing ? (
+                                                                    <>
+                                                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                                        生成中...
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <Sparkles className="w-4 h-4" />
+                                                                        Geminiで要旨を作成
+                                                                    </>
+                                                                )}
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="space-y-4 animate-in fade-in zoom-in duration-300">
+                                                            <div className="p-6 bg-white dark:bg-zinc-800 rounded-2xl border border-indigo-100 dark:border-indigo-800 shadow-sm overflow-hidden relative">
+                                                                <div className="absolute top-4 right-4 flex gap-2">
+                                                                    <button
+                                                                        onClick={() => copyToClipboard(aiSummary)}
+                                                                        className="p-2 bg-zinc-50 dark:bg-zinc-700 rounded-lg text-zinc-500 hover:text-indigo-600 transition-colors"
+                                                                        title="クリップボードにコピー"
+                                                                    >
+                                                                        <Copy className="w-4 h-4" />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => setAiSummary(null)}
+                                                                        className="p-2 bg-zinc-50 dark:bg-zinc-700 rounded-lg text-zinc-500 hover:text-red-500 transition-colors"
+                                                                        title="破棄"
+                                                                    >
+                                                                        <Trash2 className="w-4 h-4" />
+                                                                    </button>
+                                                                </div>
+                                                                <div className="prose prose-sm dark:prose-invert max-w-none">
+                                                                    <pre className="whitespace-pre-wrap font-sans text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">
+                                                                        {aiSummary}
+                                                                    </pre>
+                                                                </div>
+                                                            </div>
+                                                            <p className="text-[10px] text-zinc-400 text-center italic">要旨をコピーして、以下のエディタに貼り付けてください。</p>
+                                                        </div>
+                                                    )}
                                                 </div>
-                                                <h5 className="font-black text-lg">AI 議事録要約 (Gemini)</h5>
                                             </div>
 
-                                            {!aiSummary ? (
-                                                <div className="space-y-4">
-                                                    <div className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-indigo-200 dark:border-indigo-800 rounded-2xl bg-white/50 dark:bg-zinc-900/50">
-                                                        {audioFile ? (
-                                                            <div className="flex items-center gap-4 w-full">
-                                                                <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl text-indigo-600">
-                                                                    <Music className="w-6 h-6" />
-                                                                </div>
-                                                                <div className="flex-1 min-w-0">
-                                                                    <p className="font-bold text-sm truncate">{audioFile.name}</p>
-                                                                    <p className="text-[10px] text-zinc-500">{(audioFile.size / 1024 / 1024).toFixed(2)} MB</p>
-                                                                </div>
+                                            {/* Google Drive OCR Section */}
+                                            <div className="p-6 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/10 dark:to-orange-900/10 rounded-3xl border border-amber-100 dark:border-amber-800 flex flex-col justify-between">
+                                                <div>
+                                                    <div className="flex items-center gap-3 mb-6">
+                                                        <div className="p-2 bg-amber-600 rounded-xl text-white">
+                                                            <Image className="w-5 h-5" />
+                                                        </div>
+                                                        <h5 className="font-black text-lg">画像から文字起こし (Drive OCR)</h5>
+                                                    </div>
+
+                                                    {!meetingFolderId && !loadingImages ? (
+                                                        <div className="p-5 bg-white/50 dark:bg-zinc-900/50 rounded-2xl border border-dashed border-amber-200 dark:border-amber-800 text-center text-xs text-zinc-500 space-y-3">
+                                                            <p className="font-bold text-zinc-700 dark:text-zinc-300">フォルダが見つかりませんでした</p>
+                                                            <p>検索対象フォルダ名：「<span className="font-mono text-amber-700 dark:text-amber-400">{selectedTemplate.id === 'improvement' ? '改善活動推進委員会' : '統合情報部門会議'}</span>」</p>
+                                                            <p className="text-[10px] opacity-75">Drive内にこの名前のフォルダが存在するか確認してください。</p>
+                                                            <div className="flex flex-col gap-2">
                                                                 <button
-                                                                    onClick={() => setAudioFile(null)}
-                                                                    className="p-2 text-zinc-400 hover:text-red-500 transition-colors"
+                                                                    onClick={findDriveTemplate}
+                                                                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold transition-all"
                                                                 >
-                                                                    <Trash2 className="w-5 h-5" />
+                                                                    <RefreshCw className="w-3.5 h-3.5" />
+                                                                    再検索する
+                                                                </button>
+                                                                <button
+                                                                    onClick={debugListAllFolders}
+                                                                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-300 rounded-lg text-xs font-bold transition-all"
+                                                                >
+                                                                    Drive内のフォルダ一覧を確認
                                                                 </button>
                                                             </div>
-                                                        ) : (
-                                                            <label className="flex flex-col items-center cursor-pointer group">
-                                                                <Mic className="w-12 h-12 text-zinc-300 group-hover:text-indigo-500 transition-colors mb-2" />
-                                                                <span className="text-sm font-bold text-zinc-500 group-hover:text-indigo-600 transition-colors">録音データを選択 (MP3/WAV/AAC)</span>
-                                                                <input
-                                                                    type="file"
-                                                                    className="hidden"
-                                                                    accept="audio/*"
-                                                                    onChange={(e) => setAudioFile(e.target.files?.[0] || null)}
-                                                                />
-                                                            </label>
-                                                        )}
-                                                    </div>
-                                                    <button
-                                                        onClick={handleSummarize}
-                                                        disabled={!audioFile || isSummarizing}
-                                                        className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600 text-white rounded-xl font-black hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-500/20 disabled:opacity-50"
-                                                    >
-                                                        {isSummarizing ? (
-                                                            <>
-                                                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                                                生成中...
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                <Sparkles className="w-4 h-4" />
-                                                                Geminiで要旨を作成
-                                                            </>
-                                                        )}
-                                                    </button>
-                                                </div>
-                                            ) : (
-                                                <div className="space-y-4 animate-in fade-in zoom-in duration-300">
-                                                    <div className="p-6 bg-white dark:bg-zinc-800 rounded-2xl border border-indigo-100 dark:border-indigo-800 shadow-sm overflow-hidden relative">
-                                                        <div className="absolute top-4 right-4 flex gap-2">
+                                                        </div>
+
+                                                    ) : loadingImages ? (
+                                                        <div className="flex flex-col items-center justify-center p-8 text-zinc-500 text-sm">
+                                                            <Loader2 className="w-8 h-8 text-amber-600 animate-spin mb-2" />
+                                                            画像を読み込み中...
+                                                        </div>
+                                                    ) : folderImages.length === 0 ? (
+                                                        <div className="p-6 bg-white/50 dark:bg-zinc-900/50 rounded-2xl border border-dashed border-amber-200 dark:border-amber-800 text-center text-xs text-zinc-500 space-y-3">
+                                                            <p>フォルダ内に画像ファイル（JPG/PNG等）が見つかりませんでした。</p>
+                                                            <p className="text-[10px] opacity-75">（フォルダ名: {selectedTemplate.id === 'improvement' ? '改善活動推進委員会' : '統合情報部門会議'}）</p>
                                                             <button
-                                                                onClick={() => copyToClipboard(aiSummary)}
-                                                                className="p-2 bg-zinc-50 dark:bg-zinc-700 rounded-lg text-zinc-500 hover:text-indigo-600 transition-colors"
-                                                                title="クリップボードにコピー"
+                                                                onClick={() => meetingFolderId && fetchFolderImages(meetingFolderId)}
+                                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/20 dark:hover:bg-amber-900/40 text-amber-700 dark:text-amber-300 rounded-lg text-xs font-bold transition-all"
                                                             >
-                                                                <Copy className="w-4 h-4" />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => setAiSummary(null)}
-                                                                className="p-2 bg-zinc-50 dark:bg-zinc-700 rounded-lg text-zinc-500 hover:text-red-500 transition-colors"
-                                                                title="破棄"
-                                                            >
-                                                                <Trash2 className="w-4 h-4" />
+                                                                <RefreshCw className="w-3.5 h-3.5" />
+                                                                フォルダを更新
                                                             </button>
                                                         </div>
-                                                        <div className="prose prose-sm dark:prose-invert max-w-none">
-                                                            <pre className="whitespace-pre-wrap font-sans text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">
-                                                                {aiSummary}
-                                                            </pre>
+                                                    ) : (
+                                                        <div className="space-y-4">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="flex-1">
+                                                                    <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">対象の画像を選択</label>
+                                                                    <select
+                                                                        value={selectedImageId}
+                                                                        onChange={(e) => setSelectedImageId(e.target.value)}
+                                                                        className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none text-xs"
+                                                                    >
+                                                                        {folderImages.map((image) => (
+                                                                            <option key={image.id} value={image.id}>
+                                                                                {image.name} ({new Date(image.modifiedTime).toLocaleDateString('ja-JP')})
+                                                                            </option>
+                                                                        ))}
+                                                                    </select>
+                                                                </div>
+                                                                <button
+                                                                    onClick={() => meetingFolderId && fetchFolderImages(meetingFolderId)}
+                                                                    className="self-end p-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-xl transition-all"
+                                                                    title="フォルダ内を更新"
+                                                                >
+                                                                    <RefreshCw className="w-4 h-4 text-zinc-600 dark:text-zinc-300" />
+                                                                </button>
+                                                            </div>
+
+                                                            {selectedImageId && (
+                                                                <div className="flex items-center gap-3 p-3 bg-white/70 dark:bg-zinc-900/70 rounded-xl border border-amber-100/50 dark:border-amber-900/10">
+                                                                    {folderImages.find(f => f.id === selectedImageId)?.thumbnailLink ? (
+                                                                        <img
+                                                                            src={folderImages.find(f => f.id === selectedImageId)?.thumbnailLink}
+                                                                            alt="Preview"
+                                                                            className="w-12 h-12 object-cover rounded-lg border border-zinc-200 dark:border-zinc-800 shrink-0"
+                                                                        />
+                                                                    ) : (
+                                                                        <div className="w-12 h-12 bg-zinc-100 dark:bg-zinc-800 rounded-lg flex items-center justify-center text-zinc-400 shrink-0">
+                                                                            <FileText className="w-5 h-5" />
+                                                                        </div>
+                                                                    )}
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <p className="text-xs font-bold truncate text-zinc-700 dark:text-zinc-300">
+                                                                            {folderImages.find(f => f.id === selectedImageId)?.name}
+                                                                        </p>
+                                                                        <a
+                                                                            href={folderImages.find(f => f.id === selectedImageId)?.webViewLink}
+                                                                            target="_blank"
+                                                                            rel="noreferrer"
+                                                                            className="text-[9px] text-blue-600 hover:underline flex items-center gap-0.5 mt-0.5"
+                                                                        >
+                                                                            Google Driveで画像を表示
+                                                                        </a>
+                                                                    </div>
+                                                                </div>
+                                                            )}
                                                         </div>
-                                                    </div>
-                                                    <p className="text-[10px] text-zinc-400 text-center italic">要旨をコピーして、以下のエディタに貼り付けてください。</p>
+                                                    )}
                                                 </div>
-                                            )}
+
+                                                {meetingFolderId && folderImages.length > 0 && (
+                                                    <div className="mt-6">
+                                                        <button
+                                                            onClick={handleOcrImage}
+                                                            disabled={isOcrRunning || !selectedImageId}
+                                                            className="w-full flex items-center justify-center gap-2 py-3 bg-amber-600 text-white rounded-xl font-black hover:bg-amber-700 transition-all shadow-lg shadow-amber-500/10 disabled:opacity-50"
+                                                        >
+                                                            {isOcrRunning ? (
+                                                                <div className="flex flex-col items-center gap-1">
+                                                                    <div className="flex items-center justify-center gap-2">
+                                                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                                                        <span>OCR実行中...</span>
+                                                                    </div>
+                                                                    {ocrProgressText && (
+                                                                        <span className="text-[10px] font-normal text-amber-100">{ocrProgressText}</span>
+                                                                    )}
+                                                                </div>
+                                                            ) : (
+                                                                <>
+                                                                    <Image className="w-4 h-4" />
+                                                                    文字起こし (Google Docを作成)
+                                                                </>
+                                                            )}
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
 
                                         <div>

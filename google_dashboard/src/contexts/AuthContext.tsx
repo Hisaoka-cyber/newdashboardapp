@@ -85,9 +85,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         setIsSigningIn(false);
                         return;
                     }
+                    // Store token with expiry time (tokens last 3600s = 1 hour)
+                    const tokenWithExpiry = {
+                        ...response,
+                        expires_at: Date.now() + (response.expires_in || 3600) * 1000
+                    };
                     gapi.client.setToken(response);
                     setIsSignedIn(true);
-                    localStorage.setItem('google_access_token', JSON.stringify(response));
+                    localStorage.setItem('google_access_token', JSON.stringify(tokenWithExpiry));
                     await fetchUserInfo(response.access_token);
                     setIsSigningIn(false);
                 },
@@ -95,13 +100,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             setTokenClient(client);
 
-            // Check for existing token
+            // Check for existing token - validate expiry before restoring
             const storedToken = localStorage.getItem('google_access_token');
             if (storedToken) {
                 const token = JSON.parse(storedToken);
-                gapi.client.setToken(token);
-                setIsSignedIn(true);
-                await fetchUserInfo(token.access_token);
+                const isExpired = token.expires_at && Date.now() > token.expires_at;
+                if (isExpired) {
+                    // Token is expired - clear it and require re-login
+                    console.warn('[Auth] Stored token is expired. Clearing and requiring re-login.');
+                    localStorage.removeItem('google_access_token');
+                } else {
+                    gapi.client.setToken(token);
+                    setIsSignedIn(true);
+                    await fetchUserInfo(token.access_token);
+                }
             }
 
             setIsLoaded(true);
@@ -111,6 +123,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setIsLoaded(true);
         }
     }, [clientId]);
+
 
     useEffect(() => {
         // Wait for both GSI and GAPI to be available

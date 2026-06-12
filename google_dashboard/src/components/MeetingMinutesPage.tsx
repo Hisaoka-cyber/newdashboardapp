@@ -83,6 +83,9 @@ export const MeetingMinutesPage: React.FC = () => {
     const [selectedImageId, setSelectedImageId] = useState<string>('');
     const [ocrResultText, setOcrResultText] = useState<string | null>(null);
     const [createdDocId, setCreatedDocId] = useState<string | null>(null);
+    const [ocrOriginalText, setOcrOriginalText] = useState<string | null>(null);
+    const [isOcrCorrecting, setIsOcrCorrecting] = useState(false);
+    const [isShowingOriginalOcr, setIsShowingOriginalOcr] = useState(false);
 
     useEffect(() => {
         if (isSignedIn && selectedTemplate) {
@@ -371,6 +374,48 @@ export const MeetingMinutesPage: React.FC = () => {
         } finally {
             setIsOcrRunning(false);
             setOcrProgressText('');
+        }
+    };
+
+    const handleOcrCorrect = async () => {
+        if (!ocrResultText) return;
+        if (!geminiApiKey) {
+            alert('Gemini APIキーが設定されていません。画面右上にある設定（歯車マーク）からAPIキーを入力してください。');
+            return;
+        }
+
+        setIsOcrCorrecting(true);
+        try {
+            const genAI = new GoogleGenerativeAI(geminiApiKey);
+            const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" }, { apiVersion: "v1beta" });
+
+            const prompt = `あなたは優秀な校正エディタです。以下の文章は画像からOCR（光学文字認識）で読み取ったテキストです。OCR特有の誤字・脱字、文字の読み間違い（例: 「1」と「l」や、類似の漢字の誤字）、不自然な位置での改行などを自然な日本語に修正・校正してください。
+
+【重要ルール】
+1. 元文章の意味や表現を勝手に改変したり、勝手に要約を加えたりしないでください。あくまで「誤字脱字の修正」と「表記揺れの補正」のみを行ってください。
+2. 解説、導入文、結びの文（「以下のように修正しました」など）などの余計なテキストは一切追加せず、校正・修正後のテキストのみを出力してください。
+
+[対象の文章]
+${ocrResultText}`;
+
+            const response = await model.generateContent(prompt);
+            const resultText = response.response.text();
+            
+            if (resultText && resultText.trim().length > 0) {
+                // Save original text if not already saved
+                if (!ocrOriginalText) {
+                    setOcrOriginalText(ocrResultText);
+                }
+                setOcrResultText(resultText.trim());
+                setIsShowingOriginalOcr(false);
+            } else {
+                throw new Error('AIから校正内容を取得できませんでした。');
+            }
+        } catch (error: any) {
+            console.error('Gemini OCR correction error:', error);
+            alert(`AI校正中にエラーが発生しました:\n${error.message || String(error)}`);
+        } finally {
+            setIsOcrCorrecting(false);
         }
     };
 
@@ -846,39 +891,89 @@ export const MeetingMinutesPage: React.FC = () => {
                                                     {ocrResultText ? (
                                                         <div className="space-y-4 animate-in fade-in zoom-in duration-300">
                                                             <div className="p-4 bg-white dark:bg-zinc-800 rounded-2xl border border-amber-100 dark:border-amber-800 shadow-sm overflow-hidden relative">
-                                                                <div className="absolute top-4 right-4 flex gap-2">
-                                                                    <button
-                                                                        onClick={() => copyToClipboard(ocrResultText)}
-                                                                        className="p-2 bg-zinc-50 dark:bg-zinc-700 rounded-lg text-zinc-500 hover:text-amber-600 transition-colors"
-                                                                        title="クリップボードにコピー"
-                                                                    >
-                                                                        <Copy className="w-4 h-4" />
-                                                                    </button>
-                                                                    {createdDocId && (
-                                                                        <a
-                                                                            href={`https://docs.google.com/document/d/${createdDocId}/edit`}
-                                                                            target="_blank"
-                                                                            rel="noreferrer"
-                                                                            className="p-2 bg-zinc-50 dark:bg-zinc-700 rounded-lg text-zinc-500 hover:text-blue-600 transition-colors flex items-center justify-center"
-                                                                            title="Googleドキュメントで開く"
-                                                                        >
-                                                                            <ExternalLink className="w-4 h-4" />
-                                                                        </a>
+                                                                {/* Top Control Bar */}
+                                                                <div className="flex items-center justify-between mb-4 border-b border-zinc-100 dark:border-zinc-700 pb-3">
+                                                                    {/* Left side: Original/Corrected switcher or Badge */}
+                                                                    {ocrOriginalText ? (
+                                                                        <div className="flex bg-zinc-100 dark:bg-zinc-900 rounded-lg p-0.5 text-[10px] font-bold">
+                                                                            <button
+                                                                                onClick={() => setIsShowingOriginalOcr(false)}
+                                                                                className={`px-2.5 py-1 rounded-md transition-all ${!isShowingOriginalOcr ? 'bg-white dark:bg-zinc-800 shadow text-amber-600 dark:text-amber-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+                                                                            >
+                                                                                AI校正後
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={() => setIsShowingOriginalOcr(true)}
+                                                                                className={`px-2.5 py-1 rounded-md transition-all ${isShowingOriginalOcr ? 'bg-white dark:bg-zinc-800 shadow text-zinc-700 dark:text-zinc-300' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+                                                                            >
+                                                                                校正前
+                                                                            </button>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 px-2 py-1 rounded-md">
+                                                                            OCR結果（未校正）
+                                                                        </span>
                                                                     )}
-                                                                    <button
-                                                                        onClick={() => {
-                                                                            setOcrResultText(null);
-                                                                            setCreatedDocId(null);
-                                                                        }}
-                                                                        className="p-2 bg-zinc-50 dark:bg-zinc-700 rounded-lg text-zinc-500 hover:text-red-500 transition-colors"
-                                                                        title="破棄"
-                                                                    >
-                                                                        <Trash2 className="w-4 h-4" />
-                                                                    </button>
+
+                                                                    {/* Right side: Action buttons */}
+                                                                    <div className="flex gap-1.5 items-center">
+                                                                        {!ocrOriginalText && (
+                                                                            <button
+                                                                                onClick={handleOcrCorrect}
+                                                                                disabled={isOcrCorrecting}
+                                                                                className="flex items-center gap-1 px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[10px] font-bold transition-all disabled:opacity-50"
+                                                                                title="AIで誤字脱字を自動校正"
+                                                                            >
+                                                                                {isOcrCorrecting ? (
+                                                                                    <>
+                                                                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                                                                        校正中...
+                                                                                    </>
+                                                                                ) : (
+                                                                                    <>
+                                                                                        <Sparkles className="w-3 h-3" />
+                                                                                        AI誤字校正
+                                                                                    </>
+                                                                                )}
+                                                                            </button>
+                                                                        )}
+                                                                        <button
+                                                                            onClick={() => copyToClipboard(isShowingOriginalOcr ? (ocrOriginalText || '') : ocrResultText)}
+                                                                            className="p-1.5 bg-zinc-50 dark:bg-zinc-700 rounded-lg text-zinc-500 hover:text-amber-600 transition-colors"
+                                                                            title="クリップボードにコピー"
+                                                                        >
+                                                                            <Copy className="w-3.5 h-3.5" />
+                                                                        </button>
+                                                                        {createdDocId && (
+                                                                            <a
+                                                                                href={`https://docs.google.com/document/d/${createdDocId}/edit`}
+                                                                                target="_blank"
+                                                                                rel="noreferrer"
+                                                                                className="p-1.5 bg-zinc-50 dark:bg-zinc-700 rounded-lg text-zinc-500 hover:text-blue-600 transition-colors flex items-center justify-center"
+                                                                                title="Googleドキュメントで開く"
+                                                                            >
+                                                                                <ExternalLink className="w-3.5 h-3.5" />
+                                                                            </a>
+                                                                        )}
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                setOcrResultText(null);
+                                                                                setOcrOriginalText(null);
+                                                                                setCreatedDocId(null);
+                                                                                setIsShowingOriginalOcr(false);
+                                                                            }}
+                                                                            className="p-1.5 bg-zinc-50 dark:bg-zinc-700 rounded-lg text-zinc-500 hover:text-red-500 transition-colors"
+                                                                            title="破棄して再選択"
+                                                                        >
+                                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                                        </button>
+                                                                    </div>
                                                                 </div>
-                                                                <div className="prose prose-sm dark:prose-invert max-w-none mt-8">
+
+                                                                {/* Text Preview */}
+                                                                <div className="prose prose-sm dark:prose-invert max-w-none">
                                                                     <pre className="whitespace-pre-wrap font-sans text-xs text-zinc-700 dark:text-zinc-300 leading-relaxed max-h-[300px] overflow-y-auto pr-2">
-                                                                        {ocrResultText}
+                                                                        {isShowingOriginalOcr ? ocrOriginalText : ocrResultText}
                                                                     </pre>
                                                                 </div>
                                                             </div>
